@@ -7,6 +7,7 @@ Pillow>=10.0.0
 click>=8.1.0
 PyYAML>=6.0
 rich>=13.0.0
+lxml>=4.9.0
 
 # Web framework
 fastapi>=0.104.0
