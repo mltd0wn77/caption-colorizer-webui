@@ -62,7 +62,7 @@ def get_html_content() -> str:
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
         <title>Caption Colorizer - Professional Subtitle Generator</title>
         <style>
-            * {
+            *, *::before, *::after {
                 margin: 0;
                 padding: 0;
                 box-sizing: border-box;
@@ -85,6 +85,8 @@ def get_html_content() -> str:
                 max-width: 700px;
                 width: 100%;
                 box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+                box-sizing: border-box;
+                overflow: hidden;
             }
             
             h1 {
@@ -110,6 +112,9 @@ def get_html_content() -> str:
                 border-radius: 12px;
                 padding: 20px;
                 margin-bottom: 20px;
+                box-sizing: border-box;
+                width: 100%;
+                overflow-x: auto;
             }
             
             .section-title {
@@ -195,6 +200,8 @@ def get_html_content() -> str:
                 padding: 12px;
                 border-radius: 10px;
                 border: 1px solid #e2e8f0;
+                box-sizing: border-box;
+                width: 100%;
             }
             
             .color-input-group label {
@@ -452,6 +459,15 @@ def get_html_content() -> str:
             
             /* Responsive adjustments for color layout */
             @media (max-width: 768px) {
+                .container {
+                    padding: 20px;
+                    max-width: calc(100% - 40px);
+                }
+                
+                .form-section {
+                    padding: 15px;
+                }
+                
                 .accent-colors-grid {
                     grid-template-columns: 1fr;
                 }
@@ -461,13 +477,16 @@ def get_html_content() -> str:
                 }
                 
                 .color-input-wrapper {
-                    flex-wrap: wrap;
+                    flex-wrap: nowrap;
                 }
                 
                 input[type="text"].hex-input {
                     min-width: 0;
-                    width: 100%;
-                    margin-top: 8px;
+                    max-width: 150px;
+                }
+                
+                h1 {
+                    font-size: 24px;
                 }
             }
             
@@ -665,8 +684,51 @@ def get_html_content() -> str:
                 e.target.parentElement.classList.toggle('has-file', !!fileName);
             });
             
+            // Load saved colors from localStorage
+            function loadSavedColors() {
+                const savedColors = localStorage.getItem('captionColors');
+                if (savedColors) {
+                    try {
+                        const colors = JSON.parse(savedColors);
+                        if (colors.base) {
+                            document.getElementById('baseColor').value = colors.base;
+                            document.getElementById('baseColorHex').value = colors.base;
+                        }
+                        for (let i = 1; i <= 4; i++) {
+                            if (colors[`accent${i}`]) {
+                                document.getElementById(`accent${i}Color`).value = colors[`accent${i}`];
+                                document.getElementById(`accent${i}ColorHex`).value = colors[`accent${i}`];
+                            }
+                        }
+                    } catch (e) {
+                        console.error('Failed to load saved colors:', e);
+                    }
+                }
+            }
+            
+            // Save colors to localStorage whenever they change
+            function saveColors() {
+                const colors = {
+                    base: document.getElementById('baseColor').value,
+                    accent1: document.getElementById('accent1Color').value,
+                    accent2: document.getElementById('accent2Color').value,
+                    accent3: document.getElementById('accent3Color').value,
+                    accent4: document.getElementById('accent4Color').value
+                };
+                localStorage.setItem('captionColors', JSON.stringify(colors));
+            }
+            
+            // Add change listeners to all color inputs
+            document.querySelectorAll('input[type="color"], input.hex-input').forEach(input => {
+                input.addEventListener('change', saveColors);
+            });
+            
             // Check for existing session on page load
             window.addEventListener('load', () => {
+                // Load saved colors
+                loadSavedColors();
+                
+                // Check for existing session
                 const savedSession = localStorage.getItem('captionSession');
                 if (savedSession) {
                     try {
@@ -1007,7 +1069,7 @@ def process_captions_task(
             mode="images-xml",
             video=video_path,
             srt=srt_path,
-            out_dir=pngs_dir,
+            out=pngs_dir,  # Fixed parameter name
             seed=42
         )
         
