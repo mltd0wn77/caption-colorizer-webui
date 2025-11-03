@@ -1,112 +1,94 @@
+#!/usr/bin/env python3
 """
-Production-ready Caption Colorizer Web Application
-Optimized for deployment on Render, Railway, or similar platforms
+Production FastAPI application for Caption Colorizer Web UI
+with progress tracking and fixed configuration
 """
 
 import os
 import sys
-from fastapi import FastAPI, UploadFile, File, BackgroundTasks, HTTPException
-from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
-from fastapi.middleware.cors import CORSMiddleware
-from fastapi.middleware.trustedhost import TrustedHostMiddleware
-from pathlib import Path
-import tempfile
 import shutil
-import uuid
-import zipfile
 import asyncio
-from datetime import datetime, timedelta
 import logging
+import zipfile
+import uuid
+import time
+import json
+from pathlib import Path
+from datetime import datetime
+from typing import Optional
 
-# Import your existing caption processing code
+from fastapi import FastAPI, File, UploadFile, HTTPException, BackgroundTasks, Request
+from fastapi.responses import HTMLResponse, FileResponse, JSONResponse, StreamingResponse
+from fastapi.staticfiles import StaticFiles
+from starlette.responses import Response
+import uvicorn
+
+# Add the parent directory to the path so we can import captions module
+sys.path.insert(0, str(Path(__file__).parent))
+
 from captions.config import load_config
 from captions.renderer import CaptionRenderer
-from captions.utils import detect_fps
 
-# Configure logging
+# Configuration
+STORAGE_DIR = Path(os.environ.get("STORAGE_PATH", "/app/storage"))
+UPLOAD_DIR = STORAGE_DIR / "uploads"
+OUTPUT_DIR = STORAGE_DIR / "outputs"
+UPLOAD_DIR.mkdir(exist_ok=True, parents=True)
+OUTPUT_DIR.mkdir(exist_ok=True, parents=True)
+
+# Limits
+MAX_FILE_SIZE = 500 * 1024 * 1024  # 500MB
+
+# Setup logging
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 )
-logger = logging.getLogger(__name__)
+logger = logging.getLogger("webapp")
 
-# Initialize FastAPI app
-app = FastAPI(
-    title="Caption Colorizer",
-    description="Generate beautifully colored captions for your videos",
-    version="1.0.0"
-)
+# Progress tracking
+progress_store = {}
 
-# Security middleware
-app.add_middleware(
-    TrustedHostMiddleware,
-    allowed_hosts=["*"]  # Configure with your domain in production
-)
+app = FastAPI(title="Caption Colorizer")
 
-# CORS middleware
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_methods=["GET", "POST"],
-    allow_headers=["*"],
-)
-
-# Configuration
-STORAGE_DIR = Path(os.environ.get("STORAGE_DIR", "/app/storage"))
-UPLOAD_DIR = STORAGE_DIR / "uploads"
-OUTPUT_DIR = STORAGE_DIR / "outputs"
-MAX_FILE_SIZE = 500 * 1024 * 1024  # 500MB
-CLEANUP_INTERVAL = 3600  # 1 hour
-FILE_RETENTION = 3600  # 1 hour
-
-# Ensure directories exist
-UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
-OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
-
-# Background cleanup task
-async def cleanup_old_files():
-    """Remove files older than retention period"""
-    while True:
-        try:
-            cutoff = datetime.now() - timedelta(seconds=FILE_RETENTION)
-            cleaned = 0
-            
-            for dir_path in [UPLOAD_DIR, OUTPUT_DIR]:
-                for item in dir_path.iterdir():
-                    try:
-                        if item.stat().st_mtime < cutoff.timestamp():
-                            if item.is_dir():
-                                shutil.rmtree(item)
-                            else:
-                                item.unlink()
-                            cleaned += 1
-                    except Exception as e:
-                        logger.error(f"Error cleaning {item}: {e}")
-            
-            if cleaned > 0:
-                logger.info(f"Cleaned up {cleaned} old files/directories")
-                
-        except Exception as e:
-            logger.error(f"Cleanup task error: {e}")
+# Cleanup old files on startup
+def cleanup_old_files():
+    """Remove files older than 1 hour"""
+    try:
+        cutoff_time = time.time() - 3600  # 1 hour
         
-        await asyncio.sleep(CLEANUP_INTERVAL)
+        for dir_path in [UPLOAD_DIR, OUTPUT_DIR]:
+            if dir_path.exists():
+                for item in dir_path.iterdir():
+                    if item.is_dir():
+                        # Check creation time of directory
+                        if item.stat().st_mtime < cutoff_time:
+                            shutil.rmtree(item, ignore_errors=True)
+                            logger.info(f"Cleaned up old directory: {item}")
+    except Exception as e:
+        logger.error(f"Error during cleanup: {e}")
 
-# Start cleanup task on startup
 @app.on_event("startup")
 async def startup_event():
-    asyncio.create_task(cleanup_old_files())
+    """Run cleanup on startup"""
     logger.info("Caption Colorizer started successfully")
+    cleanup_old_files()
+
+@app.on_event("shutdown")
+async def shutdown_event():
+    """Cleanup on shutdown"""
+    logger.info("Caption Colorizer shutting down")
 
 @app.get("/", response_class=HTMLResponse)
-async def index():
-    """Serve the web interface"""
+async def root():
+    """Serve the main HTML interface"""
     return """
     <!DOCTYPE html>
     <html lang="en">
     <head>
         <meta charset="UTF-8">
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>Caption Colorizer - Beautiful Colored Captions for Your Videos</title>
+        <title>Caption Colorizer - Professional Subtitle Styling</title>
         <style>
             * {
                 margin: 0;
@@ -115,38 +97,51 @@ async def index():
             }
             
             body {
-                font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+                font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
                 background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
                 min-height: 100vh;
                 display: flex;
-                align-items: center;
                 justify-content: center;
+                align-items: center;
                 padding: 20px;
             }
             
             .container {
                 background: white;
                 border-radius: 20px;
+                box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
                 padding: 40px;
-                box-shadow: 0 20px 60px rgba(0,0,0,0.2);
                 max-width: 600px;
                 width: 100%;
-                animation: slideUp 0.5s ease;
+                animation: fadeIn 0.5s ease-in;
             }
             
-            @keyframes slideUp {
+            @keyframes fadeIn {
                 from { opacity: 0; transform: translateY(20px); }
                 to { opacity: 1; transform: translateY(0); }
             }
             
             .header {
                 text-align: center;
-                margin-bottom: 40px;
+                margin-bottom: 30px;
+            }
+            
+            .logo {
+                width: 60px;
+                height: 60px;
+                background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                border-radius: 15px;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                margin: 0 auto 15px;
+                font-size: 30px;
             }
             
             h1 {
                 color: #2d3748;
-                font-size: 32px;
+                font-size: 28px;
+                font-weight: 700;
                 margin-bottom: 10px;
                 display: flex;
                 align-items: center;
@@ -254,133 +249,203 @@ async def index():
             }
             
             .submit-btn:disabled {
-                opacity: 0.5;
+                opacity: 0.6;
                 cursor: not-allowed;
             }
             
-            #status {
-                margin-top: 20px;
+            .status-loading, .status-success, .status-error {
                 padding: 15px;
                 border-radius: 10px;
+                margin-top: 20px;
+                font-size: 14px;
                 display: none;
-                animation: slideDown 0.3s ease;
+                animation: slideIn 0.3s ease;
             }
             
-            @keyframes slideDown {
+            @keyframes slideIn {
                 from { opacity: 0; transform: translateY(-10px); }
                 to { opacity: 1; transform: translateY(0); }
             }
             
+            .status-loading {
+                background: #e6f4ff;
+                color: #0066cc;
+                border: 1px solid #b3d9ff;
+            }
+            
             .status-success {
-                background: #d4edda;
-                color: #155724;
-                border: 1px solid #c3e6cb;
+                background: #f0fff4;
+                color: #22543d;
+                border: 1px solid #9ae6b4;
             }
             
             .status-error {
-                background: #f8d7da;
-                color: #721c24;
-                border: 1px solid #f5c6cb;
+                background: #fff5f5;
+                color: #742a2a;
+                border: 1px solid #feb2b2;
             }
             
-            .status-loading {
-                background: #cce5ff;
-                color: #004085;
-                border: 1px solid #b8daff;
+            .progress-container {
+                margin-top: 15px;
+                padding: 15px;
+                background: #f8f9fa;
+                border-radius: 8px;
+                display: none;
+            }
+            
+            .progress-header {
+                display: flex;
+                justify-content: space-between;
+                align-items: center;
+                margin-bottom: 10px;
+                font-size: 14px;
+            }
+            
+            .progress-status {
+                color: #4a5568;
+                font-weight: 500;
+            }
+            
+            .progress-time {
+                color: #718096;
+                font-size: 12px;
+            }
+            
+            .progress-bar {
+                width: 100%;
+                height: 8px;
+                background: #e2e8f0;
+                border-radius: 4px;
+                overflow: hidden;
+                position: relative;
+            }
+            
+            .progress-fill {
+                height: 100%;
+                background: linear-gradient(90deg, #667eea 0%, #764ba2 100%);
+                border-radius: 4px;
+                transition: width 0.3s ease;
+                position: absolute;
+                left: 0;
+                top: 0;
+            }
+            
+            .progress-percentage {
+                text-align: center;
+                margin-top: 8px;
+                font-size: 16px;
+                font-weight: 600;
+                color: #667eea;
             }
             
             .spinner {
                 display: inline-block;
                 width: 16px;
                 height: 16px;
-                border: 2px solid transparent;
-                border-top-color: #667eea;
+                border: 2px solid #667eea;
                 border-radius: 50%;
+                border-top-color: transparent;
                 animation: spin 0.8s linear infinite;
-                margin-right: 8px;
-                vertical-align: middle;
             }
             
             @keyframes spin {
                 to { transform: rotate(360deg); }
             }
             
-            .progress-bar {
-                width: 100%;
-                height: 4px;
-                background: #e2e8f0;
-                border-radius: 2px;
-                overflow: hidden;
+            .error-details {
+                margin-top: 10px;
+                padding: 10px;
+                background: #fff;
+                border-radius: 5px;
+                font-family: monospace;
+                font-size: 12px;
+                color: #e53e3e;
+            }
+            
+            .footer {
+                margin-top: 30px;
+                text-align: center;
+                color: #a0aec0;
+                font-size: 12px;
+            }
+            
+            .download-section {
+                margin-top: 20px;
+                padding: 20px;
+                background: linear-gradient(135deg, #f0f3ff 0%, #e6f4ff 100%);
+                border-radius: 12px;
+                text-align: center;
+                display: none;
+                animation: fadeIn 0.5s ease;
+            }
+            
+            .download-btn {
+                background: linear-gradient(135deg, #48bb78 0%, #38a169 100%);
+                color: white;
+                border: none;
+                padding: 12px 24px;
+                border-radius: 8px;
+                font-size: 16px;
+                font-weight: 600;
+                cursor: pointer;
+                transition: all 0.3s;
+                box-shadow: 0 4px 15px rgba(72, 187, 120, 0.3);
                 margin-top: 10px;
             }
             
-            .progress-fill {
-                height: 100%;
-                background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-                animation: progress 2s ease-in-out infinite;
+            .download-btn:hover {
+                transform: translateY(-2px);
+                box-shadow: 0 6px 20px rgba(72, 187, 120, 0.4);
             }
             
-            @keyframes progress {
-                0% { width: 0%; }
-                50% { width: 70%; }
-                100% { width: 100%; }
-            }
-            
-            @media (max-width: 640px) {
-                .container {
-                    padding: 30px 20px;
-                }
-                h1 {
-                    font-size: 24px;
-                }
-                .features {
-                    grid-template-columns: 1fr;
-                }
+            .download-message {
+                color: #2d3748;
+                font-size: 16px;
+                margin-bottom: 10px;
+                font-weight: 500;
             }
         </style>
     </head>
     <body>
         <div class="container">
             <div class="header">
-                <h1>
-                    <span>🎨</span>
-                    <span>Caption Colorizer</span>
-                </h1>
-                <p class="subtitle">Transform your subtitles into beautifully styled captions for Adobe Premiere Pro</p>
+                <div class="logo">🎨</div>
+                <h1>Caption Colorizer</h1>
+                <p class="subtitle">Transform your subtitles with professional styling for Premiere Pro</p>
             </div>
             
             <div class="features">
                 <div class="feature">
+                    <span class="feature-icon">🎬</span>
+                    <span>ALL CAPS formatting</span>
+                </div>
+                <div class="feature">
                     <span class="feature-icon">🎨</span>
-                    <span>Smart color cycling</span>
+                    <span>Smart accent colors</span>
                 </div>
                 <div class="feature">
-                    <span class="feature-icon">📹</span>
-                    <span>Premiere Pro ready</span>
+                    <span class="feature-icon">📐</span>
+                    <span>Auto-trimmed PNGs</span>
                 </div>
                 <div class="feature">
-                    <span class="feature-icon">⚡</span>
-                    <span>Fast processing</span>
-                </div>
-                <div class="feature">
-                    <span class="feature-icon">🎯</span>
-                    <span>Professional quality</span>
+                    <span class="feature-icon">📦</span>
+                    <span>Premiere Pro XML</span>
                 </div>
             </div>
             
             <form id="uploadForm" class="upload-form">
-                <div class="file-input-wrapper" id="videoWrapper">
-                    <div class="file-label">📹 Upload Video</div>
-                    <div class="file-info">MP4, MOV, or AVI (max 500MB)</div>
-                    <input type="file" id="video" name="video" accept="video/*" required>
-                    <div id="videoName" class="selected-file"></div>
+                <div class="file-input-wrapper" onclick="document.getElementById('videoFile').click()">
+                    <input type="file" id="videoFile" name="video" accept=".mp4,.mov,.avi,.mkv" required>
+                    <div class="file-label">📹 Select Video File</div>
+                    <div class="file-info">MP4, MOV, AVI, MKV (max 500MB)</div>
+                    <div class="selected-file" id="videoFileName"></div>
                 </div>
                 
-                <div class="file-input-wrapper" id="srtWrapper">
-                    <div class="file-label">📝 Upload Subtitles</div>
-                    <div class="file-info">SRT format only</div>
-                    <input type="file" id="srt" name="srt" accept=".srt" required>
-                    <div id="srtName" class="selected-file"></div>
+                <div class="file-input-wrapper" onclick="document.getElementById('srtFile').click()">
+                    <input type="file" id="srtFile" name="srt" accept=".srt" required>
+                    <div class="file-label">📝 Select SRT File</div>
+                    <div class="file-info">SubRip subtitle file (.srt)</div>
+                    <div class="selected-file" id="srtFileName"></div>
                 </div>
                 
                 <button type="submit" class="submit-btn">
@@ -389,43 +454,78 @@ async def index():
             </form>
             
             <div id="status"></div>
+            
+            <div id="progressContainer" class="progress-container">
+                <div class="progress-header">
+                    <span class="progress-status" id="progressStatus">Preparing...</span>
+                    <span class="progress-time" id="progressTime">0:00</span>
+                </div>
+                <div class="progress-bar">
+                    <div class="progress-fill" id="progressFill" style="width: 0%"></div>
+                </div>
+                <div class="progress-percentage" id="progressPercentage">0%</div>
+            </div>
+            
+            <div id="downloadSection" class="download-section">
+                <div class="download-message">✨ Your captions are ready!</div>
+                <button id="downloadBtn" class="download-btn">Download Colored Captions</button>
+            </div>
+            
+            <div class="footer">
+                <p>Your files are processed securely and deleted after 1 hour</p>
+            </div>
         </div>
         
         <script>
-            // File input handlers
-            function setupFileInput(inputId, wrapperId, nameId) {
-                const input = document.getElementById(inputId);
-                const wrapper = document.getElementById(wrapperId);
-                const nameDisplay = document.getElementById(nameId);
-                
-                wrapper.addEventListener('click', () => input.click());
-                
-                input.addEventListener('change', function(e) {
-                    const file = e.target.files[0];
-                    if (file) {
-                        nameDisplay.textContent = `✓ ${file.name} (${(file.size / 1024 / 1024).toFixed(1)}MB)`;
-                        wrapper.classList.add('has-file');
-                    } else {
-                        nameDisplay.textContent = '';
-                        wrapper.classList.remove('has-file');
-                    }
-                });
-            }
+            let startTime = null;
+            let progressInterval = null;
+            let eventSource = null;
+            let currentSessionId = null;
             
-            setupFileInput('video', 'videoWrapper', 'videoName');
-            setupFileInput('srt', 'srtWrapper', 'srtName');
+            // Check for existing session on page load
+            window.addEventListener('load', function() {
+                const savedSession = localStorage.getItem('captionSession');
+                if (savedSession) {
+                    const sessionData = JSON.parse(savedSession);
+                    // Check if session is less than 1 hour old
+                    if (Date.now() - sessionData.timestamp < 3600000) {
+                        currentSessionId = sessionData.sessionId;
+                        checkSessionStatus(currentSessionId);
+                    } else {
+                        localStorage.removeItem('captionSession');
+                    }
+                }
+            });
+            
+            // File input handlers
+            document.getElementById('videoFile').addEventListener('change', function(e) {
+                const fileName = e.target.files[0]?.name || '';
+                document.getElementById('videoFileName').textContent = fileName ? `✓ ${fileName}` : '';
+                e.target.parentElement.classList.toggle('has-file', !!fileName);
+            });
+            
+            document.getElementById('srtFile').addEventListener('change', function(e) {
+                const fileName = e.target.files[0]?.name || '';
+                document.getElementById('srtFileName').textContent = fileName ? `✓ ${fileName}` : '';
+                e.target.parentElement.classList.toggle('has-file', !!fileName);
+            });
+            
+            // Download button handler
+            document.getElementById('downloadBtn').addEventListener('click', async function() {
+                if (currentSessionId) {
+                    await downloadResult(currentSessionId);
+                }
+            });
             
             // Form submission
             document.getElementById('uploadForm').addEventListener('submit', async (e) => {
                 e.preventDefault();
                 
-                const videoFile = document.getElementById('video').files[0];
-                const srtFile = document.getElementById('srt').files[0];
+                const videoFile = document.getElementById('videoFile').files[0];
+                const srtFile = document.getElementById('srtFile').files[0];
                 
-                // Validate file sizes
-                const maxSize = 500 * 1024 * 1024; // 500MB
-                if (videoFile.size > maxSize) {
-                    showStatus('error', `Video file too large (max 500MB, got ${(videoFile.size / 1024 / 1024).toFixed(1)}MB)`);
+                if (!videoFile || !srtFile) {
+                    showStatus('error', '❌ Please select both video and SRT files');
                     return;
                 }
                 
@@ -436,11 +536,12 @@ async def index():
                 const submitBtn = e.target.querySelector('.submit-btn');
                 submitBtn.disabled = true;
                 
-                showStatus('loading', `
-                    <span class="spinner"></span>
-                    Processing your video... This may take a minute.
-                    <div class="progress-bar"><div class="progress-fill"></div></div>
-                `);
+                // Clear any previous session
+                localStorage.removeItem('captionSession');
+                hideDownloadSection();
+                
+                showStatus('loading', '<span class="spinner"></span> Uploading files...');
+                showProgress();
                 
                 try {
                     const response = await fetch('/process', {
@@ -448,6 +549,87 @@ async def index():
                         body: formData
                     });
                     
+                    if (response.ok) {
+                        const data = await response.json();
+                        currentSessionId = data.session_id;
+                        
+                        // Save session to localStorage
+                        localStorage.setItem('captionSession', JSON.stringify({
+                            sessionId: currentSessionId,
+                            timestamp: Date.now()
+                        }));
+                        
+                        // Start progress tracking
+                        trackProgress(currentSessionId);
+                        
+                    } else {
+                        const error = await response.text();
+                        throw new Error(error || 'Processing failed');
+                    }
+                } catch (error) {
+                    console.error('Error:', error);
+                    hideProgress();
+                    showStatus('error', `❌ Error: ${error.message || 'Something went wrong. Please try again.'}`);
+                    submitBtn.disabled = false;
+                }
+            });
+            
+            function trackProgress(sessionId) {
+                if (eventSource) {
+                    eventSource.close();
+                }
+                
+                eventSource = new EventSource(`/progress/${sessionId}`);
+                
+                eventSource.onmessage = function(event) {
+                    const data = JSON.parse(event.data);
+                    updateProgress(data);
+                    
+                    if (data.status === 'completed') {
+                        eventSource.close();
+                        hideProgress();
+                        showDownloadSection();
+                        showStatus('success', '✅ Your captions are ready! Click the download button below.');
+                        document.querySelector('.submit-btn').disabled = false;
+                    } else if (data.status === 'error') {
+                        eventSource.close();
+                        hideProgress();
+                        showStatus('error', `❌ Error: ${data.message}`);
+                        document.querySelector('.submit-btn').disabled = false;
+                        localStorage.removeItem('captionSession');
+                    }
+                };
+                
+                eventSource.onerror = function() {
+                    // Don't immediately show error - connection might reconnect
+                    console.log('EventSource connection lost, will retry...');
+                };
+            }
+            
+            async function checkSessionStatus(sessionId) {
+                try {
+                    const response = await fetch(`/status/${sessionId}`);
+                    if (response.ok) {
+                        const data = await response.json();
+                        if (data.status === 'completed') {
+                            currentSessionId = sessionId;
+                            showDownloadSection();
+                            showStatus('success', '✅ Your previous session is ready for download!');
+                        } else if (data.status === 'processing') {
+                            showStatus('loading', '<span class="spinner"></span> Resuming previous processing...');
+                            showProgress();
+                            trackProgress(sessionId);
+                        }
+                    }
+                } catch (error) {
+                    console.error('Error checking session status:', error);
+                    localStorage.removeItem('captionSession');
+                }
+            }
+            
+            async function downloadResult(sessionId) {
+                try {
+                    const response = await fetch(`/download/${sessionId}`);
                     if (response.ok) {
                         const blob = await response.blob();
                         const url = window.URL.createObjectURL(blob);
@@ -459,29 +641,57 @@ async def index():
                         document.body.removeChild(a);
                         window.URL.revokeObjectURL(url);
                         
-                        showStatus('success', '✅ Success! Your captions are ready and downloading now.');
-                        
-                        // Reset form
-                        setTimeout(() => {
-                            document.getElementById('uploadForm').reset();
-                            document.querySelectorAll('.file-input-wrapper').forEach(w => {
-                                w.classList.remove('has-file');
-                            });
-                            document.querySelectorAll('.selected-file').forEach(s => {
-                                s.textContent = '';
-                            });
-                        }, 2000);
+                        showStatus('success', '✅ Download started! Check your downloads folder.');
                     } else {
-                        const error = await response.text();
-                        throw new Error(error || 'Processing failed');
+                        throw new Error('Download failed');
                     }
                 } catch (error) {
-                    console.error('Error:', error);
-                    showStatus('error', `❌ Error: ${error.message || 'Something went wrong. Please try again.'}`);
-                } finally {
-                    submitBtn.disabled = false;
+                    showStatus('error', '❌ Download failed. Please try again.');
                 }
-            });
+            }
+            
+            function showDownloadSection() {
+                document.getElementById('downloadSection').style.display = 'block';
+            }
+            
+            function hideDownloadSection() {
+                document.getElementById('downloadSection').style.display = 'none';
+            }
+            
+            function showProgress() {
+                document.getElementById('progressContainer').style.display = 'block';
+                startTime = Date.now();
+                progressInterval = setInterval(updateElapsedTime, 100);
+            }
+            
+            function hideProgress() {
+                document.getElementById('progressContainer').style.display = 'none';
+                if (progressInterval) {
+                    clearInterval(progressInterval);
+                    progressInterval = null;
+                }
+                startTime = null;
+            }
+            
+            function updateProgress(data) {
+                const percentage = Math.round(data.progress * 100);
+                document.getElementById('progressFill').style.width = percentage + '%';
+                document.getElementById('progressPercentage').textContent = percentage + '%';
+                document.getElementById('progressStatus').textContent = data.message || 'Processing...';
+                
+                if (data.status === 'processing') {
+                    showStatus('loading', `<span class="spinner"></span> ${data.message}`);
+                }
+            }
+            
+            function updateElapsedTime() {
+                if (!startTime) return;
+                const elapsed = Math.floor((Date.now() - startTime) / 1000);
+                const minutes = Math.floor(elapsed / 60);
+                const seconds = elapsed % 60;
+                document.getElementById('progressTime').textContent = 
+                    `${minutes}:${seconds.toString().padStart(2, '0')}`;
+            }
             
             function showStatus(type, message) {
                 const status = document.getElementById('status');
@@ -507,11 +717,122 @@ async def health_check():
         content={
             "status": "healthy",
             "service": "caption-colorizer",
-            "version": "1.0.0",
+            "version": "2.0.0",
             "storage_available": shutil.disk_usage(STORAGE_DIR).free > 100 * 1024 * 1024  # 100MB free
         },
         status_code=200
     )
+
+async def process_with_progress(session_id: str, video_path: Path, srt_path: Path, output_dir: Path):
+    """Process captions with progress tracking"""
+    try:
+        # Initialize progress
+        progress_store[session_id] = {
+            "status": "processing",
+            "progress": 0.0,
+            "message": "Preparing...",
+            "total_steps": 100
+        }
+        
+        # Load config and override settings for proper formatting
+        cfg = load_config()
+        
+        # Ensure ALL CAPS and proper font
+        cfg["text"]["capitalization"] = "upper"  # Force ALL CAPS
+        cfg["text"]["weight"] = 700  # Bold, not italic
+        
+        # Create renderer
+        renderer = CaptionRenderer(cfg)
+        
+        # Update progress: Preparation complete (10%)
+        progress_store[session_id].update({
+            "progress": 0.1,
+            "message": "Analyzing video and captions..."
+        })
+        await asyncio.sleep(0.1)  # Allow progress update to be sent
+        
+        # Count captions for progress tracking
+        from captions.parser import parse_srt
+        captions = parse_srt(srt_path)
+        total_captions = len(captions)
+        
+        # Custom render function with progress updates
+        caption_output = output_dir / "captions"
+        
+        # We'll need to modify the render call to track progress
+        # Since we can't directly modify the renderer, we'll use a wrapper approach
+        
+        progress_store[session_id].update({
+            "progress": 0.2,
+            "message": f"Generating {total_captions} caption frames..."
+        })
+        
+        # Generate colored caption PNGs and XML
+        renderer.render(
+            mode="images-xml",
+            video=video_path,
+            srt=srt_path,
+            out=caption_output,
+            track_index=2,
+            seed=None,
+            show_progress=False
+        )
+        
+        # Update progress: Rendering complete (90%)
+        progress_store[session_id].update({
+            "progress": 0.9,
+            "message": "Packaging files..."
+        })
+        await asyncio.sleep(0.1)
+        
+        # Create ZIP archive
+        zip_path = output_dir / f"captions_{session_id}.zip"
+        with zipfile.ZipFile(zip_path, 'w', zipfile.ZIP_DEFLATED) as zipf:
+            # Add all PNG files
+            for png_file in caption_output.glob("*.png"):
+                zipf.write(png_file, arcname=png_file.name)
+            
+            # Add XML file
+            xml_file = caption_output / "captions.xml"
+            if xml_file.exists():
+                zipf.write(xml_file, arcname="captions.xml")
+            
+            # Add manifest if exists
+            manifest_file = caption_output / "captions_manifest.csv"
+            if manifest_file.exists():
+                zipf.write(manifest_file, arcname="captions_manifest.csv")
+        
+        # Update progress: Complete (100%)
+        progress_store[session_id].update({
+            "status": "completed",
+            "progress": 1.0,
+            "message": "Processing complete!",
+            "zip_path": str(zip_path)
+        })
+        
+        logger.info(f"Successfully processed {session_id}")
+        
+    except Exception as e:
+        logger.error(f"Error processing {session_id}: {e}")
+        progress_store[session_id] = {
+            "status": "error",
+            "progress": 0,
+            "message": str(e)
+        }
+    finally:
+        # Schedule cleanup after delay
+        await asyncio.sleep(3600)  # Keep for 1 hour
+        if session_id in progress_store:
+            del progress_store[session_id]
+        
+        # Cleanup files
+        try:
+            if (UPLOAD_DIR / session_id).exists():
+                shutil.rmtree(UPLOAD_DIR / session_id)
+            if (OUTPUT_DIR / session_id).exists():
+                shutil.rmtree(OUTPUT_DIR / session_id)
+        except Exception as e:
+            logger.error(f"Error cleaning up {session_id}: {e}")
 
 @app.post("/process")
 async def process_captions(
@@ -533,7 +854,7 @@ async def process_captions(
         raise HTTPException(status_code=413, detail="Video file too large (max 500MB)")
     
     # Create unique session
-    session_id = str(uuid.uuid4())[:8]  # Shorter ID for cleaner logs
+    session_id = str(uuid.uuid4())[:8]
     session_dir = UPLOAD_DIR / session_id
     session_dir.mkdir(exist_ok=True)
     
@@ -558,102 +879,82 @@ async def process_captions(
         output_dir = OUTPUT_DIR / session_id
         output_dir.mkdir(exist_ok=True)
         
-        # Load config and create renderer
-        cfg = load_config()
-        renderer = CaptionRenderer(cfg)
-        
-        # Generate colored caption PNGs and XML
-        caption_output = output_dir / "captions"
-        renderer.render(
-            mode="images-xml",
-            video=video_path,
-            srt=srt_path,
-            out=caption_output,
-            track_index=2,
-            seed=None,
-            show_progress=False
+        # Start processing in background
+        background_tasks.add_task(
+            process_with_progress,
+            session_id,
+            video_path,
+            srt_path,
+            output_dir
         )
         
-        # Create ZIP archive
-        zip_path = output_dir / f"captions_{session_id}.zip"
-        with zipfile.ZipFile(zip_path, 'w', zipfile.ZIP_DEFLATED) as zipf:
-            # Add all files from caption output directory
-            for file_path in caption_output.glob("*"):
-                zipf.write(file_path, file_path.name)
-            
-            # Add a README
-            readme_content = f"""Caption Colorizer Output
-========================
-
-Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
-Session: {session_id}
-
-Files included:
-- cap_XXXX.png: Individual caption images
-- captions.fcpxml or captions.xml: Premiere Pro import file
-
-How to use in Premiere Pro:
-1. Import the XML file into your project
-2. The captions will appear as a sequence with proper timing
-3. Place the sequence above your video track
-
-Need help? Visit: https://github.com/yourusername/CaptionScript
-"""
-            zipf.writestr("README.txt", readme_content)
-        
-        logger.info(f"Successfully processed {session_id}")
-        
-        # Schedule cleanup (don't await, let it run in background)
-        background_tasks.add_task(cleanup_session_files, session_id)
-        
-        return FileResponse(
-            path=zip_path,
-            filename=f"colored_captions_{session_id}.zip",
-            media_type="application/zip"
-        )
+        return JSONResponse({"session_id": session_id})
         
     except Exception as e:
-        logger.error(f"Error processing {session_id}: {str(e)}")
-        
-        # Clean up on error
+        logger.error(f"Error setting up processing for {session_id}: {e}")
+        # Cleanup on error
         if session_dir.exists():
             shutil.rmtree(session_dir, ignore_errors=True)
-        if 'output_dir' in locals() and output_dir.exists():
-            shutil.rmtree(output_dir, ignore_errors=True)
-        
-        raise HTTPException(
-            status_code=500,
-            detail=f"Processing failed: {str(e)}"
-        )
+        raise HTTPException(status_code=500, detail=str(e))
 
-async def cleanup_session_files(session_id: str):
-    """Clean up session files after a delay"""
-    await asyncio.sleep(300)  # Wait 5 minutes before cleanup
+@app.get("/status/{session_id}")
+async def get_status(session_id: str):
+    """Check the status of a processing session"""
+    if session_id in progress_store:
+        return JSONResponse(progress_store[session_id])
     
-    try:
-        session_upload = UPLOAD_DIR / session_id
-        session_output = OUTPUT_DIR / session_id
-        
-        if session_upload.exists():
-            shutil.rmtree(session_upload, ignore_errors=True)
-        if session_output.exists():
-            shutil.rmtree(session_output, ignore_errors=True)
-        
-        logger.info(f"Cleaned up session {session_id}")
-    except Exception as e:
-        logger.error(f"Error cleaning up session {session_id}: {e}")
+    # Check if result exists
+    zip_path = OUTPUT_DIR / session_id / f"captions_{session_id}.zip"
+    if zip_path.exists():
+        return JSONResponse({"status": "completed", "message": "Processing complete"})
+    
+    return JSONResponse({"status": "not_found", "message": "Session not found"}, status_code=404)
+
+@app.get("/progress/{session_id}")
+async def get_progress(session_id: str):
+    """Server-Sent Events endpoint for progress updates"""
+    async def generate():
+        while True:
+            if session_id in progress_store:
+                data = progress_store[session_id]
+                yield f"data: {json.dumps(data)}\n\n"
+                
+                if data["status"] in ["completed", "error"]:
+                    break
+            else:
+                yield f"data: {json.dumps({'status': 'waiting', 'progress': 0, 'message': 'Waiting...'})}\n\n"
+            
+            await asyncio.sleep(0.5)
+    
+    return StreamingResponse(
+        generate(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no"
+        }
+    )
+
+@app.get("/download/{session_id}")
+async def download_result(session_id: str):
+    """Download the processed caption files"""
+    zip_path = OUTPUT_DIR / session_id / f"captions_{session_id}.zip"
+    
+    if not zip_path.exists():
+        raise HTTPException(status_code=404, detail="File not found")
+    
+    return FileResponse(
+        path=zip_path,
+        media_type="application/zip",
+        filename=f"colored_captions_{session_id}.zip"
+    )
 
 if __name__ == "__main__":
-    import uvicorn
-    
-    # Get port from environment or default
-    port = int(os.environ.get("PORT", 8000))
-    
-    # Run the app
+    # For local development
     uvicorn.run(
-        "webapp:app",
+        "webapp_production_v2:app",
         host="0.0.0.0",
-        port=port,
-        log_level="info",
-        access_log=True
+        port=int(os.environ.get("PORT", 8000)),
+        reload=True
     )

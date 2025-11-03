@@ -22,7 +22,7 @@ RUN pip install --no-cache-dir -r requirements-web.txt
 
 # Copy application code
 COPY --chown=appuser:appuser captions/ ./captions/
-COPY --chown=appuser:appuser webapp_production_v2.py ./webapp.py
+COPY --chown=appuser:appuser webapp_production.py ./webapp.py
 
 # Create necessary directories
 RUN mkdir -p /app/storage/uploads /app/storage/outputs && \

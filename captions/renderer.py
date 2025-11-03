@@ -243,7 +243,7 @@ class CaptionRenderer:
                 ])
 
         xml_path = out_dir / "captions.xml"
-        write_xmeml(items_for_xml, fps_num, fps_den, xml_path, track_index)
+        write_xmeml(items_for_xml, fps_num, fps_den, xml_path, out_dir, dims)
         self.logger.info("Images + XMEML written to %s", out_dir)
 
     def _export_pngs(self, video: Path, srt: Path, out_dir: Path, seed: int | None, show_progress: bool):
