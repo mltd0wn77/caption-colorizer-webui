@@ -113,7 +113,7 @@ class TextRenderer:
             color_runs: List[Tuple[str, str]] = []
             for w in words:
                 color_runs.append((w, accent_color if w in accent_words else base_color))
-            rendered_lines.append((cap.lines[0], color_runs))
+            rendered_lines.append((line, color_runs))  # Use capitalized 'line' not 'cap.lines[0]'
 
         # Create temporary surface just big enough
         # measure text width/height with letter spacing manually

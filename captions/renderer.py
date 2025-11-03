@@ -161,7 +161,7 @@ class CaptionRenderer:
         from .text_render import TextRenderer
         from .timing import ms_to_frames
         from .utils import detect_fps, video_dimensions
-        from .fcpxml import write_fcpxml
+        from .xmeml import write_xmeml
         from PIL import Image
 
         out_dir.mkdir(parents=True, exist_ok=True)
@@ -242,9 +242,9 @@ class CaptionRenderer:
                     png_name,
                 ])
 
-        xml_path = out_dir / "captions.fcpxml"
-        write_fcpxml(items_for_xml, fps, xml_path, track_index)
-        self.logger.info("Images + FCPXML written to %s", out_dir)
+        xml_path = out_dir / "captions.xml"
+        write_xmeml(items_for_xml, fps_num, fps_den, xml_path, track_index)
+        self.logger.info("Images + XMEML written to %s", out_dir)
 
     def _export_pngs(self, video: Path, srt: Path, out_dir: Path, seed: int | None, show_progress: bool):
         from .parser import parse_srt, assign_accents
