@@ -25,9 +25,14 @@ class CaptionRenderer:
     def _render_video(self, video: Path, srt: Path, out: Path, seed: int | None, show_progress: bool):
         from tempfile import TemporaryDirectory
         import random
+        import os
         from .parser import parse_srt, assign_accents
         from .line_splitter import split_long_lines
-        from .text_render import TextRenderer
+        # Dynamic import based on environment
+        if os.environ.get("USE_ENHANCED_RENDERER") == "true" or "_custom_font_path" in self.cfg.get("text", {}):
+            from .text_render_enhanced import TextRenderer
+        else:
+            from .text_render import TextRenderer
         from .timing import ms_to_frames
         from .utils import detect_fps, video_dimensions
 
@@ -156,9 +161,14 @@ class CaptionRenderer:
         from tempfile import TemporaryDirectory
         import csv
         import random
+        import os
         from .parser import parse_srt, assign_accents
         from .line_splitter import split_long_lines
-        from .text_render import TextRenderer
+        # Dynamic import based on environment
+        if os.environ.get("USE_ENHANCED_RENDERER") == "true" or "_custom_font_path" in self.cfg.get("text", {}):
+            from .text_render_enhanced import TextRenderer
+        else:
+            from .text_render import TextRenderer
         from .timing import ms_to_frames
         from .utils import detect_fps, video_dimensions
         from .xmeml import write_xmeml
@@ -247,13 +257,18 @@ class CaptionRenderer:
         self.logger.info("Images + XMEML written to %s", out_dir)
 
     def _export_pngs(self, video: Path, srt: Path, out_dir: Path, seed: int | None, show_progress: bool):
+        import random
+        import os
         from .parser import parse_srt, assign_accents
         from .line_splitter import split_long_lines
-        from .text_render import TextRenderer
+        # Dynamic import based on environment
+        if os.environ.get("USE_ENHANCED_RENDERER") == "true" or "_custom_font_path" in self.cfg.get("text", {}):
+            from .text_render_enhanced import TextRenderer
+        else:
+            from .text_render import TextRenderer
         from .utils import video_dimensions, detect_fps
         from .xmeml import write_xmeml
         from .timing import ms_to_frames
-        import random
 
         dims = video_dimensions(video) or (1920, 1080)
         fps_num, fps_den = detect_fps(video) or (30, 1)
