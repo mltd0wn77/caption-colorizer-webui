@@ -31,9 +31,11 @@ class CaptionRenderer:
         from .timing import ms_to_frames
         from .utils import detect_fps, video_dimensions
 
-        fps = detect_fps(video)
-        if fps is None:
+        fps_tuple = detect_fps(video)
+        if fps_tuple is None:
             raise RuntimeError("Could not detect FPS of input video")
+        fps_num, fps_den = fps_tuple
+        fps = fps_num / fps_den  # Calculate actual FPS for video processing
 
         dims = video_dimensions(video)
         if dims is None:
@@ -82,7 +84,7 @@ class CaptionRenderer:
             img_path = png_dir / f"cap_{cap.index:04d}.png"
             img.save(img_path)
 
-            frame_info = ms_to_frames(cap.start_ms, cap.end_ms, fps)
+            frame_info = ms_to_frames(cap.start_ms, cap.end_ms, fps_num, fps_den)
             start_ts = frame_info.in_frame / fps
             end_ts = frame_info.out_frame / fps
 
@@ -164,7 +166,9 @@ class CaptionRenderer:
 
         out_dir.mkdir(parents=True, exist_ok=True)
 
-        fps = detect_fps(video) or 30.0
+        fps_tuple = detect_fps(video) or (30, 1)  # Returns (numerator, denominator)
+        fps_num, fps_den = fps_tuple
+        fps = fps_num / fps_den  # Calculate actual FPS for fcpxml
         dims = video_dimensions(video) or (1920, 1080)
 
         captions = parse_srt(srt)
@@ -214,7 +218,7 @@ class CaptionRenderer:
                 img_path = out_dir / png_name
                 img.save(img_path)
 
-                frame_info = ms_to_frames(cap.start_ms, cap.end_ms, fps)
+                frame_info = ms_to_frames(cap.start_ms, cap.end_ms, fps_num, fps_den)
 
                 items_for_xml.append(
                     {
