@@ -174,38 +174,86 @@ def get_html_content() -> str:
             }
             
             .color-inputs {
+                display: flex;
+                flex-direction: column;
+                gap: 20px;
+            }
+            
+            .base-color-row {
+                display: flex;
+                justify-content: center;
+            }
+            
+            .accent-colors-grid {
                 display: grid;
-                grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
-                gap: 10px;
+                grid-template-columns: repeat(2, 1fr);
+                gap: 15px;
             }
             
             .color-input-group {
-                display: flex;
-                flex-direction: column;
+                background: #f7fafc;
+                padding: 12px;
+                border-radius: 10px;
+                border: 1px solid #e2e8f0;
+            }
+            
+            .color-input-group label {
+                display: block;
+                margin-bottom: 8px;
+                color: #4a5568;
+                font-weight: 600;
+                font-size: 13px;
             }
             
             .color-input-wrapper {
                 display: flex;
                 align-items: center;
-                gap: 8px;
+                gap: 10px;
             }
             
             input[type="color"] {
-                width: 40px;
-                height: 40px;
-                border: 2px solid #e2e8f0;
-                border-radius: 8px;
+                width: 48px;
+                height: 48px;
+                border: 3px solid #e2e8f0;
+                border-radius: 10px;
                 cursor: pointer;
+                flex-shrink: 0;
+                background: white;
+                padding: 2px;
+            }
+            
+            input[type="color"]::-webkit-color-swatch-wrapper {
+                padding: 2px;
+            }
+            
+            input[type="color"]::-webkit-color-swatch {
+                border-radius: 6px;
+                border: none;
             }
             
             input[type="text"].hex-input {
                 flex: 1;
-                padding: 8px;
+                padding: 10px 12px;
                 border: 2px solid #e2e8f0;
                 border-radius: 8px;
-                font-family: monospace;
-                font-size: 13px;
+                font-family: 'Courier New', monospace;
+                font-size: 14px;
+                font-weight: 600;
                 text-transform: uppercase;
+                background: white;
+                min-width: 100px;
+            }
+            
+            input[type="text"].hex-input:focus {
+                outline: none;
+                border-color: #667eea;
+                box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+            }
+            
+            .base-color-row .color-input-group {
+                max-width: 280px;
+                background: linear-gradient(135deg, #f7fafc 0%, #edf2f7 100%);
+                border: 2px solid #cbd5e0;
             }
             
             .optional-tag {
@@ -401,6 +449,39 @@ def get_html_content() -> str:
                 color: #a0aec0;
                 font-size: 12px;
             }
+            
+            /* Responsive adjustments for color layout */
+            @media (max-width: 768px) {
+                .accent-colors-grid {
+                    grid-template-columns: 1fr;
+                }
+                
+                .base-color-row .color-input-group {
+                    max-width: 100%;
+                }
+                
+                .color-input-wrapper {
+                    flex-wrap: wrap;
+                }
+                
+                input[type="text"].hex-input {
+                    min-width: 0;
+                    width: 100%;
+                    margin-top: 8px;
+                }
+            }
+            
+            @media (min-width: 992px) {
+                .accent-colors-grid {
+                    gap: 20px;
+                }
+            }
+            
+            @media (min-width: 1200px) {
+                .accent-colors-grid {
+                    grid-template-columns: repeat(4, 1fr);
+                }
+            }
         </style>
     </head>
     <body>
@@ -445,43 +526,49 @@ def get_html_content() -> str:
                     </h3>
                     
                     <div class="color-inputs">
-                        <div class="color-input-group">
-                            <label>Base Color</label>
-                            <div class="color-input-wrapper">
-                                <input type="color" id="baseColor" value="#FFFFFF">
-                                <input type="text" class="hex-input" id="baseColorHex" value="#FFFFFF" maxlength="7">
+                        <!-- Base Color - Centered and Prominent -->
+                        <div class="base-color-row">
+                            <div class="color-input-group">
+                                <label>Base Color (Default: White)</label>
+                                <div class="color-input-wrapper">
+                                    <input type="color" id="baseColor" value="#FFFFFF">
+                                    <input type="text" class="hex-input" id="baseColorHex" value="#FFFFFF" maxlength="7">
+                                </div>
                             </div>
                         </div>
                         
-                        <div class="color-input-group">
-                            <label>Accent 1</label>
-                            <div class="color-input-wrapper">
-                                <input type="color" id="accent1Color" value="#FF6B6B">
-                                <input type="text" class="hex-input" id="accent1ColorHex" value="#FF6B6B" maxlength="7">
+                        <!-- Accent Colors - 2x2 Grid -->
+                        <div class="accent-colors-grid">
+                            <div class="color-input-group">
+                                <label>Accent Color 1</label>
+                                <div class="color-input-wrapper">
+                                    <input type="color" id="accent1Color" value="#FF6B6B">
+                                    <input type="text" class="hex-input" id="accent1ColorHex" value="#FF6B6B" maxlength="7" placeholder="#FF6B6B">
+                                </div>
                             </div>
-                        </div>
-                        
-                        <div class="color-input-group">
-                            <label>Accent 2</label>
-                            <div class="color-input-wrapper">
-                                <input type="color" id="accent2Color" value="#4ECDC4">
-                                <input type="text" class="hex-input" id="accent2ColorHex" value="#4ECDC4" maxlength="7">
+                            
+                            <div class="color-input-group">
+                                <label>Accent Color 2</label>
+                                <div class="color-input-wrapper">
+                                    <input type="color" id="accent2Color" value="#4ECDC4">
+                                    <input type="text" class="hex-input" id="accent2ColorHex" value="#4ECDC4" maxlength="7" placeholder="#4ECDC4">
+                                </div>
                             </div>
-                        </div>
-                        
-                        <div class="color-input-group">
-                            <label>Accent 3</label>
-                            <div class="color-input-wrapper">
-                                <input type="color" id="accent3Color" value="#45B7D1">
-                                <input type="text" class="hex-input" id="accent3ColorHex" value="#45B7D1" maxlength="7">
+                            
+                            <div class="color-input-group">
+                                <label>Accent Color 3</label>
+                                <div class="color-input-wrapper">
+                                    <input type="color" id="accent3Color" value="#45B7D1">
+                                    <input type="text" class="hex-input" id="accent3ColorHex" value="#45B7D1" maxlength="7" placeholder="#45B7D1">
+                                </div>
                             </div>
-                        </div>
-                        
-                        <div class="color-input-group">
-                            <label>Accent 4</label>
-                            <div class="color-input-wrapper">
-                                <input type="color" id="accent4Color" value="#F7DC6F">
-                                <input type="text" class="hex-input" id="accent4ColorHex" value="#F7DC6F" maxlength="7">
+                            
+                            <div class="color-input-group">
+                                <label>Accent Color 4</label>
+                                <div class="color-input-wrapper">
+                                    <input type="color" id="accent4Color" value="#F7DC6F">
+                                    <input type="text" class="hex-input" id="accent4ColorHex" value="#F7DC6F" maxlength="7" placeholder="#F7DC6F">
+                                </div>
                             </div>
                         </div>
                     </div>
