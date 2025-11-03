@@ -1,0 +1,17 @@
+# Web application requirements
+# Install with: pip install -r requirements-web.txt
+
+# Core dependencies from main app
+pysrt>=1.1.2
+Pillow>=10.0.0
+click>=8.1.0
+PyYAML>=6.0
+rich>=13.0.0
+
+# Web framework
+fastapi>=0.104.0
+uvicorn[standard]>=0.24.0
+python-multipart>=0.0.6
+
+# Optional: Production server
+gunicorn>=21.2.0

@@ -1,0 +1,8 @@
+click
+PyYAML
+tqdm
+lxml
+pysrt
+ffmpeg-python
+pytest
+Pillow

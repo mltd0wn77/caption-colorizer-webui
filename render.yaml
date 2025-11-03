@@ -1,0 +1,26 @@
+# Render deployment configuration
+# This file tells Render how to deploy your app
+
+services:
+  - type: web
+    name: caption-colorizer
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+    
+    # Free tier settings
+    plan: free  # Can upgrade to "starter" ($7/month) for more resources
+    
+    # Health check
+    healthCheckPath: /health
+    
+    # Environment variables (optional)
+    envVars:
+      - key: PYTHON_ENV
+        value: production
+      
+    # Disk storage for temporary files
+    disk:
+      name: caption-storage
+      mountPath: /app/storage
+      sizeGB: 1  # Free tier includes 1GB

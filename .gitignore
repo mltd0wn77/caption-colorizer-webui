@@ -1,0 +1,71 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+.venv/
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Virtual Environment
+pip-log.txt
+pip-delete-this-directory.txt
+
+# Testing
+.tox/
+.coverage
+.coverage.*
+.cache
+.pytest_cache/
+nosetests.xml
+coverage.xml
+*.cover
+.hypothesis/
+
+# IDEs
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Project specific
+*.log
+uploads/
+outputs/
+storage/
+*.mp4
+*.mov
+*.avi
+*.mkv
+*.srt
+!tests/resources/*.srt
+demo_output/
+demo_input/*.mp4
+demo_input/*.mov
+
+# Config (keep your local config private)
+config.yaml
+.env
+
+# Temporary files
+*.tmp
+temp/
+tmp/
